@@ -1,96 +1,67 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
-#include <readline/readline.h>
-#include <readline/history.h>
+#include "executor.h"
 
-#include "lexer.h"
-#include "token.h"
+#define MAX_INPUT 1024
+#define MAX_ARGS 64
 
-void display_history(void)
+int main()
 {
-    HIST_ENTRY **hist = history_list();
-
-    printf("\n");
-    printf("+------+--------------------------------+\n");
-    printf("| No.  | Command                        |\n");
-    printf("+------+--------------------------------+\n");
-
-    if (hist != NULL)
-    {
-        for (int i = 0; hist[i] != NULL; i++)
-        {
-            printf("| %-4d | %-30s |\n",
-                   i + 1,
-                   hist[i]->line);
-        }
-    }
-
-    printf("+------+--------------------------------+\n");
-    printf("\n");
-}
-
-int main(void)
-{
-    printf("=====================================\n");
-    printf("Shellforge\n");
-    printf(" A Unix Style Shell written in C\n");
-    printf("=====================================\n");
-
-    char *line;
+    char input[MAX_INPUT];
 
     while (1)
     {
-        line = readline("shellforge$ ");
+        printf("shellforge$ ");
+        fflush(stdout);
 
-        if (line == NULL)
+        if (fgets(input, sizeof(input), stdin) == NULL)
         {
-            printf("\nGoodbye!\n");
+            printf("\n");
             break;
         }
 
-        if (strlen(line) == 0)
-        {
-            free(line);
+        input[strcspn(input, "\n")] = '\0';
+
+        if (strlen(input) == 0)
             continue;
+
+        char *args[MAX_ARGS];
+        int argc = 0;
+
+        char *token = strtok(input, " ");
+
+        while (token != NULL && argc < MAX_ARGS - 1)
+        {
+            args[argc++] = token;
+            token = strtok(NULL, " ");
         }
 
-        /* Add command to history */
-        add_history(line);
+        args[argc] = NULL;
 
-        /* Display command history */
-        if (strcmp(line, "history") == 0)
+        if (strcmp(args[0], "exit") == 0)
         {
-            display_history();
-            free(line);
-            continue;
-        }
-
-        /* Exit */
-        if (strcmp(line, "exit") == 0)
-        {
-            free(line);
-            printf("Exiting...\n");
             break;
         }
 
-        /*
-         * Create token list and run lexer
-         */
-        TokenList list;
+        if (strcmp(args[0], "cd") == 0)
+        {
+            if (args[1] == NULL)
+            {
+                fprintf(stderr, "cd: missing argument\n");
+            }
+            else if (chdir(args[1]) != 0)
+            {
+                perror("cd");
+            }
 
-        lexer(line, &list);
+            continue;
+        }
 
-        /*
-         * Display tokens
-         */
-        token_list_print(&list);
-
-        free(line);
+        execute_command(args);
     }
-
-    clear_history();
 
     return 0;
 }

@@ -4,7 +4,7 @@ LDFLAGS = -lreadline
 
 TARGET = shellforge
 
-SRC = src/main.c src/lexer.c src/token.c
+SRC = src/main.c src/parser.c src/expand.c src/builtin.c src/executor.c
 OBJ = $(SRC:.c=.o)
 
 all: $(TARGET)
