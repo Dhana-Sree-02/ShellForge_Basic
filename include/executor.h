@@ -1,6 +1,9 @@
 #ifndef EXECUTOR_H
 #define EXECUTOR_H
 
-void execute_command(char **args);
+#include "parser.h"
+
+void execute_command(Command *cmd);
+void execute_pipeline(char *input);
 
 #endif

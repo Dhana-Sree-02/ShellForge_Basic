@@ -3,12 +3,12 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "parser.h"
 #include "executor.h"
 
 #define MAX_INPUT 1024
-#define MAX_ARGS 64
 
-int main()
+int main(void)
 {
     char input[MAX_INPUT];
 
@@ -28,39 +28,54 @@ int main()
         if (strlen(input) == 0)
             continue;
 
-        char *args[MAX_ARGS];
-        int argc = 0;
-
-        char *token = strtok(input, " ");
-
-        while (token != NULL && argc < MAX_ARGS - 1)
-        {
-            args[argc++] = token;
-            token = strtok(NULL, " ");
-        }
-
-        args[argc] = NULL;
-
-        if (strcmp(args[0], "exit") == 0)
+        /*
+         * Exit
+         */
+        if (strcmp(input, "exit") == 0)
         {
             break;
         }
 
-        if (strcmp(args[0], "cd") == 0)
+        /*
+         * Built-in cd
+         */
+        if (strncmp(input, "cd", 2) == 0 &&
+            (input[2] == '\0' || input[2] == ' '))
         {
-            if (args[1] == NULL)
-            {
-                fprintf(stderr, "cd: missing argument\n");
-            }
-            else if (chdir(args[1]) != 0)
-            {
+            char *path = input + 2;
+
+            while (*path == ' ')
+                path++;
+
+            if (*path == '\0')
+                path = getenv("HOME");
+
+            if (chdir(path) != 0)
                 perror("cd");
-            }
 
             continue;
         }
 
-        execute_command(args);
+        /*
+         * Pipeline
+         */
+        if (strchr(input, '|') != NULL)
+        {
+            execute_pipeline(input);
+            continue;
+        }
+
+        /*
+         * Normal command
+         */
+        Command *cmd = parse_command(input);
+
+        if (cmd == NULL)
+            continue;
+
+        execute_command(cmd);
+
+        free_command(cmd);
     }
 
     return 0;

@@ -1,14 +1,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
-#include "parser.h"
-#include "expand.h"
-#include "builtin.h"
+#include "executor.h"
+
+#define MAX_INPUT 1024
+#define MAX_ARGS 64
 
 int main()
 {
-    char input[4096];
+    char input[MAX_INPUT];
 
     while (1)
     {
@@ -17,45 +19,48 @@ int main()
 
         if (fgets(input, sizeof(input), stdin) == NULL)
         {
+            printf("\n");
             break;
         }
 
         input[strcspn(input, "\n")] = '\0';
 
         if (strlen(input) == 0)
+            continue;
+
+        char *args[MAX_ARGS];
+        int argc = 0;
+
+        char *token = strtok(input, " ");
+
+        while (token != NULL && argc < MAX_ARGS - 1)
         {
+            args[argc++] = token;
+            token = strtok(NULL, " ");
+        }
+
+        args[argc] = NULL;
+
+        if (strcmp(args[0], "exit") == 0)
+        {
+            break;
+        }
+
+        if (strcmp(args[0], "cd") == 0)
+        {
+            if (args[1] == NULL)
+            {
+                fprintf(stderr, "cd: missing argument\n");
+            }
+            else if (chdir(args[1]) != 0)
+            {
+                perror("cd");
+            }
+
             continue;
         }
 
-        /* Expand environment variables */
-        char *expanded = expand_variables(input);
-
-        if (expanded == NULL)
-        {
-            continue;
-        }
-
-        /* Parse command */
-        Command *cmd = parse_command(expanded);
-
-        if (cmd == NULL)
-        {
-            free(expanded);
-            continue;
-        }
-
-        /* Check and execute builtin */
-        if (is_builtin(cmd))
-        {
-            execute_builtin(cmd);
-        }
-        else
-        {
-            printf("Command not found: %s\n", cmd->args[0]);
-        }
-
-        free_command(cmd);
-        free(expanded);
+        execute_command(args);
     }
 
     return 0;
