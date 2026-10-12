@@ -1,0 +1,405 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "../include/parser.h"
+
+static char *copy_string(const char *source)
+{
+    size_t length;
+    char *destination;
+
+    if (source == NULL)
+        return NULL;
+
+    length = strlen(source);
+
+    destination = malloc(length + 1);
+
+    if (destination == NULL)
+        return NULL;
+
+    strcpy(destination, source);
+
+    return destination;
+}
+
+void pipeline_init(pipeline_t *pipeline)
+{
+    pipeline->command_count = 0;
+
+    for (int i = 0; i < MAX_COMMANDS; i++)
+    {
+        pipeline->commands[i].argc = 0;
+
+        pipeline->commands[i].input = NULL;
+        pipeline->commands[i].output = NULL;
+
+        pipeline->commands[i].append = 0;
+        pipeline->commands[i].background = 0;
+
+        for (int j = 0; j < MAX_ARGS; j++)
+        {
+            pipeline->commands[i].argv[j] = NULL;
+        }
+    }
+}
+
+static int add_argument(command_t *command,
+                        const char *text)
+{
+    if (command->argc >= MAX_ARGS - 1)
+    {
+        printf("Parser Error: Too many arguments\n");
+        return 0;
+    }
+
+    command->argv[command->argc] =
+        copy_string(text);
+
+    if (command->argv[command->argc] == NULL)
+    {
+        printf("Parser Error: Memory allocation failed\n");
+        return 0;
+    }
+
+    command->argc++;
+
+    command->argv[command->argc] = NULL;
+
+    return 1;
+}
+
+static int set_input(command_t *command,
+                     const char *filename)
+{
+    if (command->input != NULL)
+    {
+        free(command->input);
+        command->input = NULL;
+    }
+
+    command->input = copy_string(filename);
+
+    if (command->input == NULL)
+    {
+        printf("Parser Error: Memory allocation failed\n");
+        return 0;
+    }
+
+    return 1;
+}
+
+static int set_output(command_t *command,
+                      const char *filename,
+                      int append)
+{
+    if (command->output != NULL)
+    {
+        free(command->output);
+        command->output = NULL;
+    }
+
+    command->output = copy_string(filename);
+
+    if (command->output == NULL)
+    {
+        printf("Parser Error: Memory allocation failed\n");
+        return 0;
+    }
+
+    command->append = append;
+
+    return 1;
+}
+
+int parse(const token_list *tokens,
+          pipeline_t *pipeline)
+{
+    pipeline_init(pipeline);
+
+    if (tokens == NULL ||
+        tokens->count == 0)
+    {
+        return 0;
+    }
+
+    int current = 0;
+
+    pipeline->command_count = 1;
+
+    for (int i = 0;
+         i < tokens->count;
+         i++)
+    {
+        const token *t = &tokens->tokens[i];
+
+        command_t *command =
+            &pipeline->commands[current];
+
+        switch (t->type)
+        {
+            /*
+             * WORD
+             */
+            case TOKEN_WORD:
+
+                if (!add_argument(command,
+                                  t->text))
+                {
+                    pipeline_free(pipeline);
+                    return 0;
+                }
+
+                break;
+
+            /*
+             * INPUT <
+             */
+            case TOKEN_INPUT:
+
+                if (i + 1 >= tokens->count ||
+                    tokens->tokens[i + 1].type != TOKEN_WORD)
+                {
+                    printf(
+                        "Parser Error: filename expected after <\n"
+                    );
+
+                    pipeline_free(pipeline);
+                    return 0;
+                }
+
+                if (!set_input(
+                        command,
+                        tokens->tokens[i + 1].text))
+                {
+                    pipeline_free(pipeline);
+                    return 0;
+                }
+
+                i++;
+
+                break;
+
+            /*
+             * OUTPUT >
+             */
+            case TOKEN_OUTPUT:
+
+                if (i + 1 >= tokens->count ||
+                    tokens->tokens[i + 1].type != TOKEN_WORD)
+                {
+                    printf(
+                        "Parser Error: filename expected after >\n"
+                    );
+
+                    pipeline_free(pipeline);
+                    return 0;
+                }
+
+                if (!set_output(
+                        command,
+                        tokens->tokens[i + 1].text,
+                        0))
+                {
+                    pipeline_free(pipeline);
+                    return 0;
+                }
+
+                i++;
+
+                break;
+
+            /*
+             * APPEND >>
+             */
+            case TOKEN_APPEND:
+
+                if (i + 1 >= tokens->count ||
+                    tokens->tokens[i + 1].type != TOKEN_WORD)
+                {
+                    printf(
+                        "Parser Error: filename expected after >>\n"
+                    );
+
+                    pipeline_free(pipeline);
+                    return 0;
+                }
+
+                if (!set_output(
+                        command,
+                        tokens->tokens[i + 1].text,
+                        1))
+                {
+                    pipeline_free(pipeline);
+                    return 0;
+                }
+
+                i++;
+
+                break;
+
+            /*
+             * BACKGROUND &
+             */
+            case TOKEN_BACKGROUND:
+
+                command->background = 1;
+
+                break;
+
+            /*
+             * PIPE |
+             */
+            case TOKEN_PIPE:
+
+                if (command->argc == 0)
+                {
+                    printf(
+                        "Parser Error: Empty command before pipe\n"
+                    );
+
+                    pipeline_free(pipeline);
+                    return 0;
+                }
+
+                if (current + 1 >= MAX_COMMANDS)
+                {
+                    printf(
+                        "Parser Error: Too many commands in pipeline\n"
+                    );
+
+                    pipeline_free(pipeline);
+                    return 0;
+                }
+
+                current++;
+
+                pipeline->command_count++;
+
+                break;
+
+            /*
+             * END
+             */
+            case TOKEN_END:
+
+                if (command->argc == 0)
+                {
+                    printf(
+                        "Parser Error: Empty command\n"
+                    );
+
+                    pipeline_free(pipeline);
+                    return 0;
+                }
+
+                return 1;
+
+            default:
+
+                printf(
+                    "Parser Error: Unknown token\n"
+                );
+
+                pipeline_free(pipeline);
+                return 0;
+        }
+    }
+
+    return 1;
+}
+
+void pipeline_print(const pipeline_t *pipeline)
+{
+    printf("\n========== PIPELINE ==========\n");
+
+    for (int i = 0;
+         i < pipeline->command_count;
+         i++)
+    {
+        const command_t *command =
+            &pipeline->commands[i];
+
+        printf("\nCommand %d\n", i + 1);
+
+        printf("------------------------------\n");
+
+        printf("Arguments\n");
+
+        for (int j = 0;
+             j < command->argc;
+             j++)
+        {
+            printf("argv[%d] = %s\n",
+                   j,
+                   command->argv[j]);
+        }
+
+        if (command->input != NULL)
+        {
+            printf("Input    : %s\n",
+                   command->input);
+        }
+        else
+        {
+            printf("Input    : None\n");
+        }
+
+        if (command->output != NULL)
+        {
+            printf("Output   : %s\n",
+                   command->output);
+        }
+        else
+        {
+            printf("Output   : None\n");
+        }
+
+        printf("Append   : %s\n",
+               command->append ? "Yes" : "No");
+
+        printf("Background : %s\n",
+               command->background ? "Yes" : "No");
+
+        printf("==============================\n");
+    }
+}
+
+void pipeline_free(pipeline_t *pipeline)
+{
+    for (int i = 0;
+         i < pipeline->command_count;
+         i++)
+    {
+        command_t *command =
+            &pipeline->commands[i];
+
+        for (int j = 0;
+             j < command->argc;
+             j++)
+        {
+            if (command->argv[j] != NULL)
+            {
+                free(command->argv[j]);
+                command->argv[j] = NULL;
+            }
+        }
+
+        if (command->input != NULL)
+        {
+            free(command->input);
+            command->input = NULL;
+        }
+
+        if (command->output != NULL)
+        {
+            free(command->output);
+            command->output = NULL;
+        }
+
+        command->argc = 0;
+    }
+
+    pipeline->command_count = 0;
+}
